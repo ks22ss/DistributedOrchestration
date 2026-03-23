@@ -6,6 +6,7 @@ plugins {
 dependencies {
     implementation(project(":common"))
     implementation(libs.spring.boot.starter.web)
+    implementation(libs.spring.boot.starter.validation)
     implementation(libs.spring.boot.starter.data.jpa)
     implementation(libs.flyway.core)
     implementation(libs.flyway.database.postgresql)
@@ -18,5 +19,6 @@ dependencies {
     annotationProcessor(libs.lombok)
 
     testImplementation(libs.junit.jupiter)
+    testImplementation("org.springframework.boot:spring-boot-starter-test")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }

@@ -4,10 +4,12 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import org.example.distributedorchestration.common.model.Task;
+import org.springframework.stereotype.Component;
 
 /**
  * Validates that workflow tasks form a DAG before orchestration starts.
  */
+@Component
 public class WorkflowDagValidator {
 
     /**
