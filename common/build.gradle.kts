@@ -12,6 +12,8 @@ dependencies {
     api(libs.grpc.protobuf)
     api(libs.grpc.stub)
     compileOnly(libs.javax.annotation.api)
+    compileOnly(libs.lombok)
+    annotationProcessor(libs.lombok)
     runtimeOnly(libs.grpc.netty.shaded)
 }
 
