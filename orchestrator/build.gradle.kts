@@ -6,11 +6,16 @@ plugins {
 dependencies {
     implementation(project(":common"))
     implementation(libs.spring.boot.starter.web)
+    implementation(libs.spring.boot.starter.data.jpa)
+    implementation(libs.flyway.core)
+    implementation(libs.flyway.database.postgresql)
     implementation(libs.spring.boot.starter.actuator)
     implementation(libs.micrometer.prometheus)
     implementation(libs.resilience4j.spring.boot3)
     implementation(libs.opentelemetry.spring.boot.starter)
     runtimeOnly(libs.postgresql)
+    compileOnly(libs.lombok)
+    annotationProcessor(libs.lombok)
 
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
