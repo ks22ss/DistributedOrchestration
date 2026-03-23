@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package orchestration.worker.v1;
+
+option java_multiple_files = true;
+option java_package = "org.example.distributedorchestration.common.worker.v1";
+option java_outer_classname = "WorkerProto";
+
+service WorkerService {
+  rpc ExecuteTask(TaskRequest) returns (TaskResponse);
+}
+
+message TaskRequest {
+  string task_id = 1;
+  string workflow_id = 2;
+  string payload = 3;
+}
+
+message TaskResponse {
+  bool success = 1;
+  string message = 2;
+}

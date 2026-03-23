@@ -1,0 +1,12 @@
+# Scrape Spring Boot Actuator Prometheus endpoint when the orchestrator runs on the host.
+# Default assumes actuator on port 8080; change targets if your app uses another port.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: orchestrator
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets:
+          - host.docker.internal:8080

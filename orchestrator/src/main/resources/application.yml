@@ -1,0 +1,19 @@
+spring:
+  application:
+    name: orchestrator
+  datasource:
+    url: jdbc:postgresql://localhost:5432/orchestration
+    username: orchestrator
+    password: orchestrator
+  jpa:
+    hibernate:
+      ddl-auto: none
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  otlp:
+    tracing:
+      endpoint: http://localhost:4318/v1/traces
