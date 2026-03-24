@@ -34,7 +34,7 @@ public class WorkflowExecutionService {
      */
     @Transactional(readOnly = true)
     public void triggerExecution(String workflowId) {
-        log.debug("Trigger execution start workflowId={}", workflowId);
+        log.info("Trigger execution start workflowId={}", workflowId);
         WorkflowEntity workflowEntity =
                 workflowRepository.findById(workflowId).orElseThrow(() -> new IllegalStateException(
                         "Workflow not found after submit: " + workflowId));
@@ -51,7 +51,7 @@ public class WorkflowExecutionService {
                 runnable.size(),
                 domainTasks.size());
         for (Task task : runnable) {
-            log.debug("Dispatching task workflowId={} taskId={}", task.getWorkflowId(), task.getTaskId());
+            log.info("Dispatching task workflowId={} taskId={}", task.getWorkflowId(), task.getTaskId());
             workerTaskDispatcher.dispatch(task);
         }
     }

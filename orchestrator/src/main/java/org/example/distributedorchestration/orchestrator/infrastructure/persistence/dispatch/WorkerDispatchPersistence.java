@@ -2,13 +2,17 @@ package org.example.distributedorchestration.orchestrator.infrastructure.persist
 
 import lombok.RequiredArgsConstructor;
 import org.example.distributedorchestration.common.model.TaskStatus;
+import org.example.distributedorchestration.orchestrator.application.event.TaskCompletedEvent;
 import org.example.distributedorchestration.orchestrator.persistence.entity.TaskEntity;
 import org.example.distributedorchestration.orchestrator.persistence.entity.TaskEntityId;
 import org.example.distributedorchestration.orchestrator.repository.TaskJpaRepository;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * Persists dispatch outcomes in short transactions so backoff sleeps do not hold DB connections (Step 9).
@@ -18,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class WorkerDispatchPersistence {
 
     private final TaskJpaRepository taskRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Value("${orchestration.dispatch.max-retries:5}")
     private int maxRetries;
@@ -28,6 +33,15 @@ public class WorkerDispatchPersistence {
         entity.setStatus(TaskStatus.SUCCESS);
         entity.setRetryCount(0);
         taskRepository.save(entity);
+
+        String workflowId = id.getWorkflowId();
+        String taskId = id.getTaskId();
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                eventPublisher.publishEvent(new TaskCompletedEvent(workflowId, taskId));
+            }
+        });
     }
 
     /**
