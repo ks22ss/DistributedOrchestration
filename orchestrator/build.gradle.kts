@@ -5,6 +5,7 @@ plugins {
 
 dependencies {
     implementation(project(":common"))
+    implementation(libs.grpc.netty.shaded)
     implementation(libs.spring.boot.starter.web)
     implementation(libs.spring.boot.starter.validation)
     implementation(libs.spring.boot.starter.data.jpa)

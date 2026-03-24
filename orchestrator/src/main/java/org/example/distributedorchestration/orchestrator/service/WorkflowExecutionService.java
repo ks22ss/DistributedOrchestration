@@ -14,9 +14,7 @@ import org.example.distributedorchestration.orchestrator.scheduler.RunnableTaskS
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/**
- * Loads persisted state and triggers dispatch for runnable tasks (Step 6/7 will extend this).
- */
+/** Loads persisted state and dispatches runnable tasks to workers over gRPC. */
 @Service
 @RequiredArgsConstructor
 public class WorkflowExecutionService {
