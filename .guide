@@ -1,0 +1,233 @@
+# Distributed Orchestration — User Guide
+
+This guide walks you through running the stack locally, submitting a workflow with **HTTP POST**, and **observing** execution (database, metrics, traces, logs).
+
+---
+
+## What you are running
+
+| Piece | Role |
+|--------|------|
+| **Docker Compose** | PostgreSQL (state), Prometheus (metrics UI) |
+| **Orchestrator** (Spring Boot) | REST API `POST /workflows`, DAG validation, dispatch to workers over **gRPC**, retries, compensation |
+| **Worker** (Spring Boot) | gRPC server that **executes** tasks (and **compensates** when the orchestrator asks) |
+
+The orchestrator’s HTTP API defaults to **port 8080**. The worker exposes **gRPC on 9090** (HTTP actuator on **8081**).
+
+---
+
+## Prerequisites
+
+- **Java 21** and a working JDK (`java -version`). On Windows, set `JAVA_HOME` to the JDK **root** (not the `bin` folder).
+- **Docker Desktop** (or Docker Engine) with Compose v2.
+- Optional: **curl** or PowerShell `Invoke-RestMethod` for HTTP examples.
+
+---
+
+## 1. Start infrastructure with Docker Compose
+
+From the `DistributedOrchestration` directory (where `docker-compose.yml` lives):
+
+```bash
+docker compose up -d
+```
+
+### Services defined in `docker-compose.yml`
+
+| Service | Host ports | Purpose |
+|---------|------------|---------|
+| **postgres** | `5432` | Database `orchestration`, user/password `orchestrator` / `orchestrator` (matches `orchestrator/src/main/resources/application.yml`) |
+| **prometheus** | **`9099` → container `9090`** | Metrics UI and scraping (`http://localhost:9099`) — host **9099** avoids conflicting with the worker gRPC port **9090** |
+Health: Postgres uses `pg_isready` in Compose; wait until it is healthy before starting the orchestrator if you hit connection errors:
+
+```bash
+docker compose ps
+```
+
+Stop everything:
+
+```bash
+docker compose down
+```
+
+To also remove the database volume (fresh DB next time):
+
+```bash
+docker compose down -v
+```
+
+---
+
+## 2. Run the Worker (gRPC)
+
+In one terminal, from `DistributedOrchestration`:
+
+**Windows (PowerShell):**
+
+```powershell
+Remove-Item Env:JAVA_HOME -ErrorAction SilentlyContinue
+gradlew :worker:bootRun
+```
+
+**Unix:**
+
+```bash
+./gradlew :worker:bootRun
+```
+
+- gRPC listens on **`localhost:9090`** (see `worker/src/main/resources/application.yml`: `orchestration.grpc.server.port`).
+- Actuator (health, Prometheus scrape for the worker itself) is on **8081** — separate from the orchestrator.
+
+Leave this process running.
+
+---
+
+## 3. Run the Orchestrator (REST + dispatch)
+
+In a **second** terminal, from `DistributedOrchestration`:
+
+```powershell
+Remove-Item Env:JAVA_HOME -ErrorAction SilentlyContinue
+./gradlew :orchestrator:bootRun
+```
+
+On first start, **Flyway** applies migrations to Postgres (`workflows`, `tasks`, etc.).
+
+- REST base URL: **`http://localhost:8080`**
+- Orchestrator connects to the worker at **`localhost:9090`** (`orchestration.worker` in `orchestrator/.../application.yml`).
+
+---
+
+## 4. Submit a workflow — `POST /workflows`
+
+### Endpoint
+
+- **Method / path:** `POST http://localhost:8080/workflows`
+- **Content-Type:** `application/json`
+- **Success:** `201 Created` with body `{ "workflowId": "...", "status": "RUNNING" }`
+
+### Request body shape
+
+- **`workflowId`** (string, required): unique id for this workflow; duplicate id → **409 Conflict**.
+- **`tasks`** (array, required, non-empty): each task has:
+  - **`taskId`** (string, required): unique within the workflow
+  - **`dependencies`** (array of task ids, optional): tasks that must **succeed** before this one runs; use `[]` or omit for no dependencies
+  - **`payload`** (string, optional): opaque input passed to the worker
+  - **`compensationPayload`** (string, optional): if set, used when the orchestrator runs saga **compensation** after a terminal failure
+
+The graph must be a valid **DAG** (no cycles, dependencies must exist). Invalid graphs → **400 Bad Request** with `{ "error": "..." }`.
+
+### Example: linear chain (A then B)
+
+**PowerShell:**
+
+```powershell
+$body = @{
+  workflowId = "demo-linear-1"
+  tasks = @(
+    @{ taskId = "a"; dependencies = @(); payload = "step-a" },
+    @{ taskId = "b"; dependencies = @("a"); payload = "step-b" }
+  )
+} | ConvertTo-Json -Depth 5
+
+Invoke-RestMethod -Method Post -Uri "http://localhost:8080/workflows" `
+  -ContentType "application/json" -Body $body
+```
+
+**curl:**
+
+```bash
+curl -s -X POST http://localhost:8080/workflows \
+  -H "Content-Type: application/json" \
+  -d '{
+    "workflowId": "demo-linear-1",
+    "tasks": [
+      { "taskId": "a", "dependencies": [], "payload": "step-a" },
+      { "taskId": "b", "dependencies": ["a"], "payload": "step-b" }
+    ]
+  }'
+```
+
+### Example: parallel roots, then join
+
+```json
+{
+  "workflowId": "demo-fan-in-1",
+  "tasks": [
+    { "taskId": "a", "dependencies": [], "payload": "parallel-1" },
+    { "taskId": "b", "dependencies": [], "payload": "parallel-2" },
+    { "taskId": "c", "dependencies": ["a", "b"], "payload": "join" }
+  ]
+}
+```
+
+---
+
+## 5. Follow the process — what happens end-to-end
+
+1. **POST** creates rows in **`workflows`** and **`tasks`** (statuses start as **PENDING** / workflow **RUNNING**).
+2. The orchestrator **schedules** ready tasks (dependencies satisfied) and calls the worker over **gRPC** (`ExecuteTask`).
+3. The worker’s **`DefaultTaskExecutor`** runs the task (demo behavior: succeeds unless you extend it).
+4. Task rows move through statuses (e.g. **SUCCEEDED**); when all tasks succeed, workflow completion logic in the orchestrator updates overall state.
+5. On repeated delivery, **idempotency** logic avoids double-applying success for the same logical execution where implemented.
+6. If a task ends **FAILED** after retries, the orchestrator can trigger **compensation** tasks using **`compensationPayload`** and reverse order where configured.
+
+There is **no** dedicated `GET /workflows/{id}` in this project yet; use the options below to inspect state.
+
+---
+
+## 6. Observe execution
+
+### A. PostgreSQL
+
+Connect to `localhost:5432`, database `orchestration`, user `orchestrator`, password `orchestrator`.
+
+Useful checks:
+
+```sql
+SELECT workflow_id, status FROM workflows ORDER BY created_at DESC LIMIT 10;
+SELECT task_id, workflow_id, status, retry_count FROM tasks WHERE workflow_id = 'demo-linear-1';
+```
+
+### B. Application logs
+
+- **Orchestrator** terminal: dispatch, retries, compensation.
+- **Worker** terminal: each gRPC `executeTask` / `compensateTask` handling.
+
+### C. Spring Actuator (orchestrator)
+
+With default config, examples:
+
+- `GET http://localhost:8080/actuator/health`
+- `GET http://localhost:8080/actuator/prometheus` — raw metrics for Prometheus
+
+### D. Prometheus (Compose)
+
+- Open **`http://localhost:9099`**
+- Scrape target in `docker/prometheus/prometheus.yml` is **`host.docker.internal:8080`** (orchestrator metrics). On Windows/Mac Docker Desktop this resolves to the host machine so the orchestrator you run with Gradle can be scraped.
+
+---
+
+## 7. Troubleshooting
+
+| Symptom | Things to check |
+|---------|-------------------|
+| Orchestrator fails to start / DB errors | `docker compose ps`; Postgres on `5432`; credentials match `application.yml` |
+| Tasks never run | Worker running? gRPC **9090** free? Orchestrator `orchestration.worker.host` / `grpc-port` |
+| `JAVA_HOME` invalid (Gradle) | Point `JAVA_HOME` at JDK root, e.g. `C:\Program Files\Java\jdk-21`, not `...\bin` |
+| Duplicate workflow | Use a new `workflowId` or clear DB (`docker compose down -v` and migrate again) |
+| Prometheus empty | Orchestrator on **8080**? Firewall? Try `curl http://localhost:8080/actuator/prometheus` on the host |
+
+---
+
+## 8. Run tests (no Docker required for unit tests)
+
+From `DistributedOrchestration`:
+
+```powershell
+.\gradlew.bat test
+```
+
+---
+
+For design background and step-by-step implementation notes, see **`spec.md`** in this folder.

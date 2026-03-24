@@ -4,5 +4,9 @@
 # Ignore Gradle build output directory
 build
 
+# IDE / Eclipse output (do not commit)
+bin/
+out/
+
 # Ignore Kotlin plugin data
 .kotlin

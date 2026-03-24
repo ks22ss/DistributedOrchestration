@@ -2,23 +2,33 @@ package org.example.distributedorchestration.orchestrator.service;
 
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.grpc.StatusRuntimeException;
-import lombok.RequiredArgsConstructor;
+import java.time.Duration;
 import lombok.extern.slf4j.Slf4j;
 import org.example.distributedorchestration.common.worker.v1.CompensationRequest;
 import org.example.distributedorchestration.orchestrator.grpc.ResilientWorkerGrpcClient;
+import org.example.distributedorchestration.orchestrator.observability.OrchestrationMetrics;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class WorkflowCompensationService {
 
     private final WorkflowCompensationPersistence compensationPersistence;
     private final ResilientWorkerGrpcClient resilientWorkerClient;
+    private final OrchestrationMetrics orchestrationMetrics;
+    private final int maxRetries;
 
-    @Value("${orchestration.compensation.max-retries:5}")
-    private int maxRetries;
+    public WorkflowCompensationService(
+            WorkflowCompensationPersistence compensationPersistence,
+            ResilientWorkerGrpcClient resilientWorkerClient,
+            OrchestrationMetrics orchestrationMetrics,
+            @Value("${orchestration.compensation.max-retries:5}") int maxRetries) {
+        this.compensationPersistence = compensationPersistence;
+        this.resilientWorkerClient = resilientWorkerClient;
+        this.orchestrationMetrics = orchestrationMetrics;
+        this.maxRetries = maxRetries;
+    }
 
     public void compensateAfterTerminalTaskFailure(String workflowId) {
         runCompensation(workflowId, false);
@@ -30,6 +40,10 @@ public class WorkflowCompensationService {
     }
 
     private void runCompensation(String workflowId, boolean recovery) {
+        runCompensationBody(workflowId, recovery);
+    }
+
+    private void runCompensationBody(String workflowId, boolean recovery) {
         CompensationStartResult start =
                 compensationPersistence.tryStartOrResumeCompensation(workflowId, recovery);
         if (start.type() == CompensationStartResult.Type.SKIP
@@ -51,10 +65,15 @@ public class WorkflowCompensationService {
 
         int attempt = 0;
         while (true) {
+            long t0 = System.nanoTime();
             try {
                 var response = resilientWorkerClient.compensateTask(request);
+                orchestrationMetrics.recordCompensationExecutionTime(
+                        Duration.ofNanos(System.nanoTime() - t0),
+                        response.getSuccess() ? "success" : "logical_failure");
                 if (response.getSuccess()) {
                     compensationPersistence.markCompensated(item.taskId());
+                    orchestrationMetrics.recordCompensationSuccess();
                     return;
                 }
                 log.warn(
@@ -63,11 +82,15 @@ public class WorkflowCompensationService {
                         item.taskId().getTaskId(),
                         response.getMessage());
             } catch (CallNotPermittedException e) {
+                orchestrationMetrics.recordCompensationExecutionTime(
+                        Duration.ofNanos(System.nanoTime() - t0), "circuit_open");
                 log.warn(
                         "Worker circuit breaker open during compensation workflowId={} taskId={}",
                         item.workflowId(),
                         item.taskId().getTaskId());
             } catch (StatusRuntimeException e) {
+                orchestrationMetrics.recordCompensationExecutionTime(
+                        Duration.ofNanos(System.nanoTime() - t0), "rpc_error");
                 log.error(
                         "Compensation gRPC error workflowId={} taskId={}",
                         item.workflowId(),
@@ -81,8 +104,10 @@ public class WorkflowCompensationService {
                         item.workflowId(),
                         item.taskId().getTaskId());
                 compensationPersistence.markCompensationFailed(item.taskId());
+                orchestrationMetrics.recordCompensationTerminalFailure();
                 return;
             }
+            orchestrationMetrics.recordCompensationRetryAttempt();
             int delaySeconds = (int) Math.pow(2, attempt - 1);
             sleepSeconds(delaySeconds);
         }

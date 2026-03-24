@@ -1,9 +1,9 @@
 package org.example.distributedorchestration.orchestrator.api.dto;
 
 /**
- * Response after a workflow is accepted and persisted.
+ * Response from {@code POST /workflows}.
  *
  * @param workflowId persisted workflow id
- * @param status current workflow status (e.g. RUNNING after submit)
+ * @param status initial workflow status (e.g. RUNNING)
  */
 public record SubmitWorkflowResponse(String workflowId, String status) {}

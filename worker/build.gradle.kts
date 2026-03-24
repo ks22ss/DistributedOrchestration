@@ -10,7 +10,6 @@ dependencies {
     implementation(libs.spring.boot.starter.actuator)
     implementation(libs.micrometer.prometheus)
     implementation(libs.resilience4j.spring.boot3)
-    implementation(libs.opentelemetry.spring.boot.starter)
 
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.grpc.inprocess)

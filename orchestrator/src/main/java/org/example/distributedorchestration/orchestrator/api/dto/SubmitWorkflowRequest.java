@@ -13,5 +13,4 @@ import java.util.List;
  */
 public record SubmitWorkflowRequest(
         @NotBlank String workflowId,
-        @NotEmpty @Valid List<SubmitWorkflowTaskDto> tasks
-) {}
+        @NotEmpty @Valid List<SubmitWorkflowTaskDto> tasks) {}

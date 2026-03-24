@@ -12,9 +12,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-/**
- * HTTP API for workflow orchestration.
- */
+/** HTTP API for workflow orchestration. */
 @RestController
 @RequestMapping("/workflows")
 @RequiredArgsConstructor
@@ -24,9 +22,6 @@ public class WorkflowController {
 
     /**
      * Submits a workflow: validates DAG, persists workflow and tasks, then triggers execution after commit.
-     *
-     * @param request workflow definition
-     * @return ids and status
      */
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)

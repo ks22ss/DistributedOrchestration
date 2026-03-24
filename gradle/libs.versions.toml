@@ -6,7 +6,6 @@ grpc = "1.69.0"
 lombok = "1.18.36"
 junit-jupiter = "5.11.4"
 micrometer = "1.14.2"
-opentelemetry-instrumentation = "2.13.1"
 postgresql = "42.7.4"
 protobuf = "0.9.4"
 protobuf-java = "3.25.5"
@@ -20,8 +19,6 @@ grpc-protobuf = { module = "io.grpc:grpc-protobuf", version.ref = "grpc" }
 grpc-stub = { module = "io.grpc:grpc-stub", version.ref = "grpc" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit-jupiter" }
 micrometer-prometheus = { module = "io.micrometer:micrometer-registry-prometheus", version.ref = "micrometer" }
-opentelemetry-otlp = { module = "io.opentelemetry:opentelemetry-exporter-otlp", version = "1.45.0" }
-opentelemetry-spring-boot-starter = { module = "io.opentelemetry.instrumentation:opentelemetry-spring-boot-starter", version.ref = "opentelemetry-instrumentation" }
 postgresql = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
 protobuf-java = { module = "com.google.protobuf:protobuf-java", version.ref = "protobuf-java" }
 resilience4j-spring-boot3 = { module = "io.github.resilience4j:resilience4j-spring-boot3", version.ref = "resilience4j" }

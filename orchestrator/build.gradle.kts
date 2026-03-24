@@ -15,7 +15,6 @@ dependencies {
     implementation(libs.spring.boot.starter.actuator)
     implementation(libs.micrometer.prometheus)
     implementation(libs.resilience4j.spring.boot3)
-    implementation(libs.opentelemetry.spring.boot.starter)
     runtimeOnly(libs.postgresql)
     compileOnly(libs.lombok)
     annotationProcessor(libs.lombok)

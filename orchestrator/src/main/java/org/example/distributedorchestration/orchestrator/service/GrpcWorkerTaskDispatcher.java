@@ -2,16 +2,19 @@ package org.example.distributedorchestration.orchestrator.service;
 
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.grpc.StatusRuntimeException;
+import java.time.Duration;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.distributedorchestration.common.model.Task;
 import org.example.distributedorchestration.common.worker.v1.TaskRequest;
 import org.example.distributedorchestration.orchestrator.grpc.ResilientWorkerGrpcClient;
+import org.example.distributedorchestration.orchestrator.observability.OrchestrationMetrics;
 import org.example.distributedorchestration.orchestrator.persistence.entity.TaskEntityId;
 import org.springframework.stereotype.Service;
 
 /**
- * Dispatches runnable tasks to workers via gRPC with exponential backoff (Step 9) and circuit breaker (Step 12).
+ * Dispatches runnable tasks to workers via gRPC with exponential backoff (Step 9), circuit breaker (Step 12),
+ * and metrics (Step 13).
  */
 @Service
 @RequiredArgsConstructor
@@ -21,9 +24,14 @@ public class GrpcWorkerTaskDispatcher implements WorkerTaskDispatcher {
     private final ResilientWorkerGrpcClient resilientWorkerClient;
     private final WorkerDispatchPersistence persistence;
     private final WorkflowCompensationAsyncRunner workflowCompensationAsyncRunner;
+    private final OrchestrationMetrics orchestrationMetrics;
 
     @Override
     public void dispatch(Task task) {
+        dispatchBody(task);
+    }
+
+    private void dispatchBody(Task task) {
         TaskEntityId id = new TaskEntityId(task.getTaskId(), task.getWorkflowId());
         TaskRequest request = TaskRequest.newBuilder()
                 .setTaskId(task.getTaskId())
@@ -31,10 +39,15 @@ public class GrpcWorkerTaskDispatcher implements WorkerTaskDispatcher {
                 .build();
 
         while (true) {
+            long t0 = System.nanoTime();
             try {
                 var response = resilientWorkerClient.executeTask(request);
+                orchestrationMetrics.recordTaskExecutionTime(
+                        Duration.ofNanos(System.nanoTime() - t0),
+                        response.getSuccess() ? "success" : "worker_failure");
                 if (response.getSuccess()) {
                     persistence.markSuccess(id);
+                    orchestrationMetrics.recordDispatchSuccess();
                     return;
                 }
                 log.warn(
@@ -43,23 +56,30 @@ public class GrpcWorkerTaskDispatcher implements WorkerTaskDispatcher {
                         task.getTaskId(),
                         response.getMessage());
                 if (handleFailure(id, task)) {
+                    orchestrationMetrics.recordDispatchTerminalFailure();
                     return;
                 }
             } catch (CallNotPermittedException e) {
+                orchestrationMetrics.recordTaskExecutionTime(
+                        Duration.ofNanos(System.nanoTime() - t0), "circuit_open");
                 log.warn(
                         "Worker circuit breaker open workflowId={} taskId={}",
                         task.getWorkflowId(),
                         task.getTaskId());
                 if (handleFailure(id, task)) {
+                    orchestrationMetrics.recordDispatchTerminalFailure();
                     return;
                 }
             } catch (StatusRuntimeException e) {
+                orchestrationMetrics.recordTaskExecutionTime(
+                        Duration.ofNanos(System.nanoTime() - t0), "rpc_error");
                 log.error(
                         "gRPC dispatch failed workflowId={} taskId={}",
                         task.getWorkflowId(),
                         task.getTaskId(),
                         e);
                 if (handleFailure(id, task)) {
+                    orchestrationMetrics.recordDispatchTerminalFailure();
                     return;
                 }
             }
@@ -76,6 +96,7 @@ public class GrpcWorkerTaskDispatcher implements WorkerTaskDispatcher {
             workflowCompensationAsyncRunner.triggerCompensation(task.getWorkflowId());
             return true;
         }
+        orchestrationMetrics.recordDispatchRetryAttempt();
         sleepBackoffSeconds(outcome.delaySeconds());
         return false;
     }

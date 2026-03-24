@@ -1,15 +1,14 @@
-# External dependencies for Distributed Orchestration (spec: PostgreSQL, Prometheus, OpenTelemetry).
+# External dependencies: PostgreSQL, Prometheus (metrics scraping), Jaeger (OpenTelemetry traces).
 # Start: docker compose up -d
 #
 # Connection hints (apps on host machine):
 #   PostgreSQL:     jdbc:postgresql://localhost:5432/orchestration
-#   OTLP (gRPC):    localhost:4317
-#   OTLP (HTTP):    http://localhost:4318
+#   Prometheus UI:  http://localhost:9099  (host 9099 → container 9090; avoids clash with worker gRPC on host 9090)
 #   Jaeger UI:      http://localhost:16686
-#   Prometheus UI:  http://localhost:9090
+#   OTLP (gRPC):    localhost:4317  — set in bootRun via OTEL_EXPORTER_OTLP_ENDPOINT (override with -Potel.otlp.endpoint=...)
 #
-# Prometheus scrapes host.docker.internal:8080/actuator/prometheus — enable actuator prometheus
-# and run the orchestrator on port 8080, or edit docker/prometheus/prometheus.yml.
+# Prometheus scrapes host.docker.internal:8080/actuator/prometheus — run the orchestrator on port 8080,
+# or edit docker/prometheus/prometheus.yml.
 
 services:
   postgres:
@@ -37,21 +36,21 @@ services:
       - --storage.tsdb.path=/prometheus
       - --web.enable-lifecycle
     ports:
-      - "9090:9090"
+      - "9099:9090"
     volumes:
       - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
   jaeger:
-    image: jaegertracing/all-in-one:1.62
+    image: jaegertracing/all-in-one:1.57
     container_name: orchestration-jaeger
     environment:
       COLLECTOR_OTLP_ENABLED: "true"
     ports:
-      - "16686:16686" # UI
-      - "4317:4317" # OTLP gRPC
-      - "4318:4318" # OTLP HTTP
+      - "16686:16686"
+      - "4317:4317"
+      - "4318:4318"
 
 volumes:
   postgres_data:
