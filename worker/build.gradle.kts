@@ -13,5 +13,6 @@ dependencies {
     implementation(libs.opentelemetry.spring.boot.starter)
 
     testImplementation(libs.junit.jupiter)
+    testImplementation(libs.grpc.inprocess)
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }

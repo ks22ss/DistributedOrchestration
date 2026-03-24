@@ -5,5 +5,7 @@ public enum TaskStatus {
     RUNNING,
     SUCCESS,
     FAILED,
-    COMPENSATED
+    COMPENSATED,
+    /** Compensation RPC failed after retries (Step 11 hardening). */
+    COMPENSATION_FAILED
 }

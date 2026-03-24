@@ -1,24 +1,26 @@
 package org.example.distributedorchestration.orchestrator.service;
 
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.grpc.StatusRuntimeException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.distributedorchestration.common.model.Task;
 import org.example.distributedorchestration.common.worker.v1.TaskRequest;
-import org.example.distributedorchestration.common.worker.v1.WorkerServiceGrpc;
+import org.example.distributedorchestration.orchestrator.grpc.ResilientWorkerGrpcClient;
 import org.example.distributedorchestration.orchestrator.persistence.entity.TaskEntityId;
 import org.springframework.stereotype.Service;
 
 /**
- * Dispatches runnable tasks to workers via gRPC with exponential backoff between retries (spec Step 9).
+ * Dispatches runnable tasks to workers via gRPC with exponential backoff (Step 9) and circuit breaker (Step 12).
  */
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class GrpcWorkerTaskDispatcher implements WorkerTaskDispatcher {
 
-    private final WorkerServiceGrpc.WorkerServiceBlockingStub workerStub;
+    private final ResilientWorkerGrpcClient resilientWorkerClient;
     private final WorkerDispatchPersistence persistence;
+    private final WorkflowCompensationAsyncRunner workflowCompensationAsyncRunner;
 
     @Override
     public void dispatch(Task task) {
@@ -30,7 +32,7 @@ public class GrpcWorkerTaskDispatcher implements WorkerTaskDispatcher {
 
         while (true) {
             try {
-                var response = workerStub.executeTask(request);
+                var response = resilientWorkerClient.executeTask(request);
                 if (response.getSuccess()) {
                     persistence.markSuccess(id);
                     return;
@@ -40,6 +42,14 @@ public class GrpcWorkerTaskDispatcher implements WorkerTaskDispatcher {
                         task.getWorkflowId(),
                         task.getTaskId(),
                         response.getMessage());
+                if (handleFailure(id, task)) {
+                    return;
+                }
+            } catch (CallNotPermittedException e) {
+                log.warn(
+                        "Worker circuit breaker open workflowId={} taskId={}",
+                        task.getWorkflowId(),
+                        task.getTaskId());
                 if (handleFailure(id, task)) {
                     return;
                 }
@@ -63,6 +73,7 @@ public class GrpcWorkerTaskDispatcher implements WorkerTaskDispatcher {
                     "Retries exhausted for workflowId={} taskId={}",
                     task.getWorkflowId(),
                     task.getTaskId());
+            workflowCompensationAsyncRunner.triggerCompensation(task.getWorkflowId());
             return true;
         }
         sleepBackoffSeconds(outcome.delaySeconds());

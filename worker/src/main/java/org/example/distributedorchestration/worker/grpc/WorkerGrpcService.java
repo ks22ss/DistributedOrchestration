@@ -1,13 +1,15 @@
 package org.example.distributedorchestration.worker.grpc;
 
 import io.grpc.stub.StreamObserver;
+import org.example.distributedorchestration.common.worker.v1.CompensationRequest;
 import org.example.distributedorchestration.common.worker.v1.TaskRequest;
 import org.example.distributedorchestration.common.worker.v1.TaskResponse;
 import org.example.distributedorchestration.common.worker.v1.WorkerServiceGrpc;
+import org.example.distributedorchestration.worker.executor.DefaultTaskExecutor;
 import org.springframework.stereotype.Component;
 
 /**
- * gRPC worker implementation (spec Step 8): {@link WorkerServiceGrpc.WorkerServiceImplBase#executeTask}.
+ * gRPC worker (Steps 8 and 11): {@link WorkerServiceGrpc.WorkerServiceImplBase} with {@link org.example.distributedorchestration.common.execution.TaskExecutor}.
  */
 @Component
 public class WorkerGrpcService extends WorkerServiceGrpc.WorkerServiceImplBase {
@@ -15,7 +17,7 @@ public class WorkerGrpcService extends WorkerServiceGrpc.WorkerServiceImplBase {
     @Override
     public void executeTask(TaskRequest request, StreamObserver<TaskResponse> responseObserver) {
         try {
-            runTask(request);
+            DefaultTaskExecutor.forExecute(request).execute();
             responseObserver.onNext(successResponse());
         } catch (Exception e) {
             responseObserver.onNext(failureResponse(e));
@@ -23,11 +25,15 @@ public class WorkerGrpcService extends WorkerServiceGrpc.WorkerServiceImplBase {
         responseObserver.onCompleted();
     }
 
-    /** Placeholder for real task execution (payload routing, idempotency, etc.). */
-    private static void runTask(TaskRequest request) {
-        if (request.getTaskId().isBlank()) {
-            throw new IllegalArgumentException("task_id is blank");
+    @Override
+    public void compensateTask(CompensationRequest request, StreamObserver<TaskResponse> responseObserver) {
+        try {
+            DefaultTaskExecutor.forCompensation(request).compensate();
+            responseObserver.onNext(successResponse());
+        } catch (Exception e) {
+            responseObserver.onNext(failureResponse(e));
         }
+        responseObserver.onCompleted();
     }
 
     private static TaskResponse successResponse() {

@@ -10,10 +10,12 @@ import java.util.List;
  * @param taskId unique id within the workflow
  * @param dependencies ids of tasks that must succeed before this task runs; may be null or empty
  * @param payload opaque task input
+ * @param compensationPayload optional saga compensation input (Step 11)
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record SubmitWorkflowTaskDto(
         @NotBlank String taskId,
         List<String> dependencies,
-        String payload
+        String payload,
+        String compensationPayload
 ) {}

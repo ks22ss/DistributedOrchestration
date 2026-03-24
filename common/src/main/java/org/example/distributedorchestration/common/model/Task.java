@@ -9,15 +9,17 @@ import lombok.NonNull;
 import lombok.Setter;
 
 @Getter
-@Setter
 public class Task {
     private final String taskId;
     private final String workflowId;
     @Getter(AccessLevel.NONE)
     private final List<String> dependencies;
+    @Setter
     private @NonNull TaskStatus status;
+    @Setter
     private int retryCount;
     private final String payload;
+    private final String compensationPayload;
 
     public Task(
             String taskId,
@@ -25,7 +27,8 @@ public class Task {
             List<String> dependencies,
             TaskStatus status,
             int retryCount,
-            String payload
+            String payload,
+            String compensationPayload
     ) {
         this.taskId = requireNonBlank(taskId, "taskId");
         this.workflowId = requireNonBlank(workflowId, "workflowId");
@@ -33,10 +36,16 @@ public class Task {
         this.status = status == null ? TaskStatus.PENDING : status;
         this.retryCount = Math.max(retryCount, 0);
         this.payload = payload;
+        this.compensationPayload = compensationPayload;
     }
 
     public static Task pending(String taskId, String workflowId, List<String> dependencies, String payload) {
-        return new Task(taskId, workflowId, dependencies, TaskStatus.PENDING, 0, payload);
+        return pending(taskId, workflowId, dependencies, payload, null);
+    }
+
+    public static Task pending(
+            String taskId, String workflowId, List<String> dependencies, String payload, String compensationPayload) {
+        return new Task(taskId, workflowId, dependencies, TaskStatus.PENDING, 0, payload, compensationPayload);
     }
 
     public List<String> getDependencies() {
@@ -48,7 +57,9 @@ public class Task {
     }
 
     public boolean isTerminal() {
-        return status == TaskStatus.SUCCESS || status == TaskStatus.COMPENSATED;
+        return status == TaskStatus.SUCCESS
+                || status == TaskStatus.COMPENSATED
+                || status == TaskStatus.COMPENSATION_FAILED;
     }
 
     public boolean dependenciesSatisfiedBy(List<Task> completedTasks) {

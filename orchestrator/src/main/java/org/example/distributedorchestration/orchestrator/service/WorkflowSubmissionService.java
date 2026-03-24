@@ -54,6 +54,7 @@ public class WorkflowSubmissionService {
                     TaskStatus.PENDING,
                     0,
                     taskDto.payload(),
+                    taskDto.compensationPayload(),
                     taskDto.dependencies() == null ? List.of() : taskDto.dependencies());
             taskRepository.save(entity);
         }
@@ -75,7 +76,8 @@ public class WorkflowSubmissionService {
                             taskId,
                             workflowId,
                             dto.dependencies() == null ? List.of() : dto.dependencies(),
-                            dto.payload()));
+                            dto.payload(),
+                            dto.compensationPayload()));
         }
         return map;
     }

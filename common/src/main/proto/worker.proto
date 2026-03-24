@@ -8,11 +8,18 @@ option java_outer_classname = "WorkerProto";
 
 service WorkerService {
   rpc ExecuteTask(TaskRequest) returns (TaskResponse);
+  rpc CompensateTask(CompensationRequest) returns (TaskResponse);
 }
 
 message TaskRequest {
   string task_id = 1;
   string payload = 2;
+}
+
+message CompensationRequest {
+  string task_id = 1;
+  string workflow_id = 2;
+  string compensation_payload = 3;
 }
 
 message TaskResponse {

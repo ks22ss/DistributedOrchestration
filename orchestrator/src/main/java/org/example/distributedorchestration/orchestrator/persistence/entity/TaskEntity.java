@@ -37,6 +37,9 @@ public class TaskEntity {
     @Column(columnDefinition = "TEXT")
     private String payload;
 
+    @Column(name = "compensation_payload", columnDefinition = "TEXT")
+    private String compensationPayload;
+
     @Convert(converter = TaskDependenciesJsonConverter.class)
     @Column(name = "dependencies_json", columnDefinition = "TEXT")
     private List<String> dependencies;
@@ -46,12 +49,14 @@ public class TaskEntity {
             TaskStatus status,
             int retryCount,
             String payload,
+            String compensationPayload,
             List<String> dependencies
     ) {
         this.id = id;
         this.status = status;
         this.retryCount = retryCount;
         this.payload = payload;
+        this.compensationPayload = compensationPayload;
         this.dependencies = dependencies == null ? List.of() : dependencies;
     }
 }

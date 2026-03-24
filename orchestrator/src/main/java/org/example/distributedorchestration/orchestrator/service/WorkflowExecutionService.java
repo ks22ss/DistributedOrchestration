@@ -53,7 +53,8 @@ public class WorkflowExecutionService {
                 entity.getDependencies(),
                 entity.getStatus(),
                 entity.getRetryCount(),
-                entity.getPayload()
+                entity.getPayload(),
+                entity.getCompensationPayload()
         );
     }
 }
