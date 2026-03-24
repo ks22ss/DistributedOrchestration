@@ -1,4 +1,4 @@
-package org.example.distributedorchestration.orchestrator.service;
+package org.example.distributedorchestration.orchestrator.domain.exception;
 
 /**
  * Raised when a workflow id is already persisted.

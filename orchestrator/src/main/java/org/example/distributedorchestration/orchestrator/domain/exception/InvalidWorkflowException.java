@@ -1,4 +1,4 @@
-package org.example.distributedorchestration.orchestrator.scheduler;
+package org.example.distributedorchestration.orchestrator.domain.exception;
 
 /**
  * Raised when a workflow DAG is invalid and cannot be executed safely.

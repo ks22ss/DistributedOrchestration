@@ -1,4 +1,4 @@
-package org.example.distributedorchestration.orchestrator.service;
+package org.example.distributedorchestration.orchestrator.domain.model;
 
 import java.util.List;
 

@@ -1,9 +1,11 @@
-package org.example.distributedorchestration.orchestrator.service;
+package org.example.distributedorchestration.orchestrator.infrastructure.persistence.compensation;
 
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.example.distributedorchestration.common.model.TaskStatus;
 import org.example.distributedorchestration.common.model.WorkflowStatus;
+import org.example.distributedorchestration.orchestrator.domain.model.CompensationItem;
+import org.example.distributedorchestration.orchestrator.domain.model.CompensationStartResult;
 import org.example.distributedorchestration.orchestrator.persistence.entity.TaskEntity;
 import org.example.distributedorchestration.orchestrator.persistence.entity.TaskEntityId;
 import org.example.distributedorchestration.orchestrator.persistence.entity.WorkflowEntity;

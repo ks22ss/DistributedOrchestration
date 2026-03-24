@@ -1,4 +1,4 @@
-package org.example.distributedorchestration.orchestrator.grpc;
+package org.example.distributedorchestration.orchestrator.infrastructure.grpc;
 
 import io.grpc.ManagedChannel;
 import io.grpc.netty.shaded.io.grpc.netty.NettyChannelBuilder;

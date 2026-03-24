@@ -1,4 +1,4 @@
-package org.example.distributedorchestration.orchestrator.service;
+package org.example.distributedorchestration.orchestrator.infrastructure.persistence.dispatch;
 
 import lombok.RequiredArgsConstructor;
 import org.example.distributedorchestration.common.model.TaskStatus;

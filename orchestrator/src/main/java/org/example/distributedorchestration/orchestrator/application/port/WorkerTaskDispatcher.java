@@ -1,4 +1,4 @@
-package org.example.distributedorchestration.orchestrator.service;
+package org.example.distributedorchestration.orchestrator.application.port;
 
 import org.example.distributedorchestration.common.model.Task;
 

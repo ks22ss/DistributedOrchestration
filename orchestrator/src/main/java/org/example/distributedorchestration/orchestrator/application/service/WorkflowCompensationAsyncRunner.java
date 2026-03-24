@@ -1,4 +1,4 @@
-package org.example.distributedorchestration.orchestrator.service;
+package org.example.distributedorchestration.orchestrator.application.service;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.scheduling.annotation.Async;

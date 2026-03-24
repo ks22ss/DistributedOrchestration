@@ -1,8 +1,8 @@
 package org.example.distributedorchestration.orchestrator.api;
 
 import java.util.Map;
-import org.example.distributedorchestration.orchestrator.scheduler.InvalidWorkflowException;
-import org.example.distributedorchestration.orchestrator.service.DuplicateWorkflowException;
+import org.example.distributedorchestration.orchestrator.domain.exception.DuplicateWorkflowException;
+import org.example.distributedorchestration.orchestrator.domain.exception.InvalidWorkflowException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;

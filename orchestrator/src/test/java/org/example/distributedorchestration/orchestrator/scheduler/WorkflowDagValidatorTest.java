@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.List;
 import java.util.Map;
 import org.example.distributedorchestration.common.model.Task;
+import org.example.distributedorchestration.orchestrator.domain.exception.InvalidWorkflowException;
 import org.junit.jupiter.api.Test;
 
 class WorkflowDagValidatorTest {

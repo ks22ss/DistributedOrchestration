@@ -1,4 +1,4 @@
-package org.example.distributedorchestration.orchestrator.service;
+package org.example.distributedorchestration.orchestrator.application.event;
 
 /**
  * Published after a workflow and its tasks are committed; triggers execution.

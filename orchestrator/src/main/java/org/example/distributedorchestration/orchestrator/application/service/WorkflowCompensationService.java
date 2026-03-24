@@ -1,11 +1,14 @@
-package org.example.distributedorchestration.orchestrator.service;
+package org.example.distributedorchestration.orchestrator.application.service;
 
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.grpc.StatusRuntimeException;
 import java.time.Duration;
 import lombok.extern.slf4j.Slf4j;
 import org.example.distributedorchestration.common.worker.v1.CompensationRequest;
-import org.example.distributedorchestration.orchestrator.grpc.ResilientWorkerGrpcClient;
+import org.example.distributedorchestration.orchestrator.domain.model.CompensationItem;
+import org.example.distributedorchestration.orchestrator.domain.model.CompensationStartResult;
+import org.example.distributedorchestration.orchestrator.infrastructure.grpc.ResilientWorkerGrpcClient;
+import org.example.distributedorchestration.orchestrator.infrastructure.persistence.compensation.WorkflowCompensationPersistence;
 import org.example.distributedorchestration.orchestrator.observability.OrchestrationMetrics;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;

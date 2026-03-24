@@ -7,7 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import org.example.distributedorchestration.orchestrator.api.dto.SubmitWorkflowResponse;
-import org.example.distributedorchestration.orchestrator.service.WorkflowSubmissionService;
+import org.example.distributedorchestration.orchestrator.application.service.WorkflowSubmissionService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;

@@ -3,9 +3,9 @@ package org.example.distributedorchestration.orchestrator.scheduler;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.distributedorchestration.common.model.WorkflowStatus;
+import org.example.distributedorchestration.orchestrator.application.service.WorkflowCompensationService;
 import org.example.distributedorchestration.orchestrator.persistence.entity.WorkflowEntity;
 import org.example.distributedorchestration.orchestrator.repository.WorkflowJpaRepository;
-import org.example.distributedorchestration.orchestrator.service.WorkflowCompensationService;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 

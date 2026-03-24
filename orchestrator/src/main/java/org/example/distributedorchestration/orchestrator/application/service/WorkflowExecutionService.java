@@ -1,11 +1,13 @@
-package org.example.distributedorchestration.orchestrator.service;
+package org.example.distributedorchestration.orchestrator.application.service;
 
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.example.distributedorchestration.common.model.Task;
 import org.example.distributedorchestration.common.model.Workflow;
+import org.example.distributedorchestration.orchestrator.application.port.WorkerTaskDispatcher;
 import org.example.distributedorchestration.orchestrator.persistence.entity.TaskEntity;
 import org.example.distributedorchestration.orchestrator.persistence.entity.WorkflowEntity;
 import org.example.distributedorchestration.orchestrator.repository.TaskJpaRepository;
@@ -17,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 /** Loads persisted state and dispatches runnable tasks to workers over gRPC. */
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class WorkflowExecutionService {
 
     private final WorkflowJpaRepository workflowRepository;
@@ -31,6 +34,7 @@ public class WorkflowExecutionService {
      */
     @Transactional(readOnly = true)
     public void triggerExecution(String workflowId) {
+        log.debug("Trigger execution start workflowId={}", workflowId);
         WorkflowEntity workflowEntity =
                 workflowRepository.findById(workflowId).orElseThrow(() -> new IllegalStateException(
                         "Workflow not found after submit: " + workflowId));
@@ -41,7 +45,13 @@ public class WorkflowExecutionService {
         }
         Workflow workflow = new Workflow(workflowId, domainTasks, workflowEntity.getStatus());
         List<Task> runnable = runnableTaskSelector.findRunnableTasks(workflow);
+        log.info(
+                "Runnable tasks resolved workflowId={} runnableCount={} totalTasks={}",
+                workflowId,
+                runnable.size(),
+                domainTasks.size());
         for (Task task : runnable) {
+            log.debug("Dispatching task workflowId={} taskId={}", task.getWorkflowId(), task.getTaskId());
             workerTaskDispatcher.dispatch(task);
         }
     }

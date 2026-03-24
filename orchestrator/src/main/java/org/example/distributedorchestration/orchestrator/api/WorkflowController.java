@@ -2,9 +2,10 @@ package org.example.distributedorchestration.orchestrator.api;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.example.distributedorchestration.orchestrator.api.dto.SubmitWorkflowRequest;
 import org.example.distributedorchestration.orchestrator.api.dto.SubmitWorkflowResponse;
-import org.example.distributedorchestration.orchestrator.service.WorkflowSubmissionService;
+import org.example.distributedorchestration.orchestrator.application.service.WorkflowSubmissionService;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/workflows")
 @RequiredArgsConstructor
+@Slf4j
 public class WorkflowController {
 
     private final WorkflowSubmissionService workflowSubmissionService;
@@ -26,6 +28,9 @@ public class WorkflowController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public SubmitWorkflowResponse submit(@Valid @RequestBody SubmitWorkflowRequest request) {
-        return workflowSubmissionService.submit(request);
+        log.info("Submit workflow request received workflowId={} taskCount={}", request.workflowId(), request.tasks().size());
+        SubmitWorkflowResponse response = workflowSubmissionService.submit(request);
+        log.info("Submit workflow request accepted workflowId={} status={}", response.workflowId(), response.status());
+        return response;
     }
 }

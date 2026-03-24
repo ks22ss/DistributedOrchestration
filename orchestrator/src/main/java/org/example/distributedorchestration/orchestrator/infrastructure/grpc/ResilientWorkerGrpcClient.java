@@ -1,4 +1,4 @@
-package org.example.distributedorchestration.orchestrator.grpc;
+package org.example.distributedorchestration.orchestrator.infrastructure.grpc;
 
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import lombok.RequiredArgsConstructor;

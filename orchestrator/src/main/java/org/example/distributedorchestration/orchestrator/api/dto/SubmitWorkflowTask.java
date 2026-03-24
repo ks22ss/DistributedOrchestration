@@ -13,7 +13,7 @@ import java.util.List;
  * @param compensationPayload optional saga compensation input (Step 11)
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public record SubmitWorkflowTaskDto(
+public record SubmitWorkflowTask(
         @NotBlank String taskId,
         List<String> dependencies,
         String payload,
