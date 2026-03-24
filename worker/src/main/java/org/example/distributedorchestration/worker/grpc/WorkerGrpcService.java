@@ -7,7 +7,7 @@ import org.example.distributedorchestration.common.worker.v1.WorkerServiceGrpc;
 import org.springframework.stereotype.Component;
 
 /**
- * gRPC worker: executes {@link WorkerServiceGrpc#executeTask} (spec Step 7/8).
+ * gRPC worker implementation (spec Step 8): {@link WorkerServiceGrpc.WorkerServiceImplBase#executeTask}.
  */
 @Component
 public class WorkerGrpcService extends WorkerServiceGrpc.WorkerServiceImplBase {
@@ -15,15 +15,29 @@ public class WorkerGrpcService extends WorkerServiceGrpc.WorkerServiceImplBase {
     @Override
     public void executeTask(TaskRequest request, StreamObserver<TaskResponse> responseObserver) {
         try {
-            // Placeholder execution: Step 8+ can plug real executors / payload handlers.
-            responseObserver.onNext(
-                    TaskResponse.newBuilder().setSuccess(true).setMessage("accepted").build());
+            runTask(request);
+            responseObserver.onNext(successResponse());
         } catch (Exception e) {
-            responseObserver.onNext(TaskResponse.newBuilder()
-                    .setSuccess(false)
-                    .setMessage(e.getMessage() == null ? "error" : e.getMessage())
-                    .build());
+            responseObserver.onNext(failureResponse(e));
         }
         responseObserver.onCompleted();
+    }
+
+    /** Placeholder for real task execution (payload routing, idempotency, etc.). */
+    private static void runTask(TaskRequest request) {
+        if (request.getTaskId().isBlank()) {
+            throw new IllegalArgumentException("task_id is blank");
+        }
+    }
+
+    private static TaskResponse successResponse() {
+        return TaskResponse.newBuilder().setSuccess(true).setMessage("ok").build();
+    }
+
+    private static TaskResponse failureResponse(Exception e) {
+        return TaskResponse.newBuilder()
+                .setSuccess(false)
+                .setMessage(e.getMessage() == null ? "error" : e.getMessage())
+                .build();
     }
 }
