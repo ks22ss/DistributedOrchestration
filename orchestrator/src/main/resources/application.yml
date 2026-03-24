@@ -16,6 +16,8 @@ orchestration:
   worker:
     host: localhost
     grpc-port: 9090
+  dispatch:
+    max-retries: 5
 
 management:
   endpoints:
