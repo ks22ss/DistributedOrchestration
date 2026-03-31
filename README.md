@@ -51,7 +51,7 @@ Use **two terminals**. Start infrastructure first if you rely on Docker for Post
 
 Submit workflows with `POST http://localhost:8080/workflows` (JSON body per `WorkflowController` and the DTOs in the orchestrator module).
 
-Task dispatch retries use **`next_retry_at`** in the database and a periodic retry scan (`orchestration.dispatch.retry-scan-interval-ms` in `application.yml`), not `Thread.sleep` on the HTTP thread. An in-flight **lease** (`in-flight-lease-seconds`) prevents duplicate dispatch until a call completes, backoff elapses, or the lease expires after a crash.
+Task dispatch retries use **`next_retry_at`** in the database and a periodic retry scan (`orchestration.dispatch.retry-scan-interval-ms` in `application.yml`), not `Thread.sleep` on the HTTP thread. An in-flight **lease** (`in-flight-lease-seconds`) prevents duplicate dispatch until a call completes, backoff elapses, or the lease expires after a crash. Independent runnable tasks in the same wave run on a bounded **dispatch pool** (`parallelism`, `parallel-queue-capacity`).
 
 ## Other commands
 

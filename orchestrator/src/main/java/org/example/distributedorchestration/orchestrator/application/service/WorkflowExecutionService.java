@@ -3,7 +3,7 @@ package org.example.distributedorchestration.orchestrator.application.service;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import lombok.RequiredArgsConstructor;
+import java.util.concurrent.Executor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.distributedorchestration.common.model.Task;
 import org.example.distributedorchestration.common.model.Workflow;
@@ -13,12 +13,12 @@ import org.example.distributedorchestration.orchestrator.persistence.entity.Work
 import org.example.distributedorchestration.orchestrator.repository.TaskJpaRepository;
 import org.example.distributedorchestration.orchestrator.repository.WorkflowJpaRepository;
 import org.example.distributedorchestration.orchestrator.scheduler.RunnableTaskSelector;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /** Loads persisted state and dispatches runnable tasks to workers over gRPC. */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class WorkflowExecutionService {
 
@@ -26,6 +26,21 @@ public class WorkflowExecutionService {
     private final TaskJpaRepository taskRepository;
     private final RunnableTaskSelector runnableTaskSelector;
     private final WorkerTaskDispatcher workerTaskDispatcher;
+    private final Executor dispatchExecutor;
+
+    public WorkflowExecutionService(
+            WorkflowJpaRepository workflowRepository,
+            TaskJpaRepository taskRepository,
+            RunnableTaskSelector runnableTaskSelector,
+            WorkerTaskDispatcher workerTaskDispatcher,
+            @Qualifier("dispatchExecutor") Executor dispatchExecutor
+    ) {
+        this.workflowRepository = workflowRepository;
+        this.taskRepository = taskRepository;
+        this.runnableTaskSelector = runnableTaskSelector;
+        this.workerTaskDispatcher = workerTaskDispatcher;
+        this.dispatchExecutor = dispatchExecutor;
+    }
 
     /**
      * Runs after submit transaction commits; finds runnable tasks and dispatches them.
@@ -50,10 +65,20 @@ public class WorkflowExecutionService {
                 workflowId,
                 runnable.size(),
                 domainTasks.size());
-        for (Task task : runnable) {
-            log.info("Dispatching task workflowId={} taskId={}", task.getWorkflowId(), task.getTaskId());
-            workerTaskDispatcher.dispatch(task);
-        }
+        runnable.forEach(task -> {
+            log.info("Submitting dispatch workflowId={} taskId={}", task.getWorkflowId(), task.getTaskId());
+            dispatchExecutor.execute(() -> {
+                try {
+                    workerTaskDispatcher.dispatch(task);
+                } catch (RuntimeException e) {
+                    log.error(
+                            "Uncaught dispatch failure workflowId={} taskId={}",
+                            task.getWorkflowId(),
+                            task.getTaskId(),
+                            e);
+                }
+            });
+        });
     }
 
     private static Task toDomainTask(TaskEntity entity) {

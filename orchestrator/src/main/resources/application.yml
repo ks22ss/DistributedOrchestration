@@ -20,6 +20,8 @@ orchestration:
     max-retries: 5
     retry-scan-interval-ms: 1000
     in-flight-lease-seconds: 120
+    parallelism: 8
+    parallel-queue-capacity: 256
   compensation:
     max-retries: 5
     recovery-interval-ms: 60000
