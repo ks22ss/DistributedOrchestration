@@ -7,6 +7,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
+import java.time.Instant;
 import java.util.List;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -43,6 +44,9 @@ public class TaskEntity {
     @Convert(converter = TaskDependenciesJsonConverter.class)
     @Column(name = "dependencies_json", columnDefinition = "TEXT")
     private List<String> dependencies;
+
+    @Column(name = "next_retry_at")
+    private Instant nextRetryAt;
 
     public TaskEntity(
             TaskEntityId id,

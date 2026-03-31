@@ -1,5 +1,6 @@
 package org.example.distributedorchestration.orchestrator.scheduler;
 
+import java.time.Instant;
 import java.util.List;
 import org.example.distributedorchestration.common.model.Task;
 import org.example.distributedorchestration.common.model.TaskStatus;
@@ -18,8 +19,10 @@ public class RunnableTaskSelector {
      */
     public List<Task> findRunnableTasks(Workflow workflow) {
         List<Task> successful = workflow.successfulTasks();
+        Instant now = Instant.now();
         return workflow.allTasks().stream()
                 .filter(t -> t.getStatus() == TaskStatus.PENDING)
+                .filter(t -> t.getNextRetryAt() == null || !t.getNextRetryAt().isAfter(now))
                 .filter(t -> t.dependenciesSatisfiedBy(successful))
                 .toList();
     }

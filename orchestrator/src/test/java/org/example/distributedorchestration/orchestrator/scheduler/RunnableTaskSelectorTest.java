@@ -3,6 +3,7 @@ package org.example.distributedorchestration.orchestrator.scheduler;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import org.example.distributedorchestration.common.model.Task;
@@ -47,6 +48,15 @@ class RunnableTaskSelectorTest {
         Task a = Task.pending("A", "wf", List.of("B"), "p");
         Task b = Task.pending("B", "wf", List.of("A"), "p");
         Map<String, Task> tasks = Map.of("A", a, "B", b);
+        Workflow wf = new Workflow("wf", tasks, WorkflowStatus.RUNNING);
+
+        assertTrue(selector.findRunnableTasks(wf).isEmpty());
+    }
+
+    @Test
+    void skipsPendingTasksWhoseNextRetryAtIsStillInTheFuture() {
+        Task a = new Task("A", "wf", List.of(), TaskStatus.PENDING, 0, "p", null, Instant.now().plusSeconds(60));
+        Map<String, Task> tasks = Map.of("A", a);
         Workflow wf = new Workflow("wf", tasks, WorkflowStatus.RUNNING);
 
         assertTrue(selector.findRunnableTasks(wf).isEmpty());

@@ -1,5 +1,6 @@
 package org.example.distributedorchestration.common.model;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -20,6 +21,7 @@ public class Task {
     private int retryCount;
     private final String payload;
     private final String compensationPayload;
+    private final Instant nextRetryAt;
 
     public Task(
             String taskId,
@@ -30,6 +32,19 @@ public class Task {
             String payload,
             String compensationPayload
     ) {
+        this(taskId, workflowId, dependencies, status, retryCount, payload, compensationPayload, null);
+    }
+
+    public Task(
+            String taskId,
+            String workflowId,
+            List<String> dependencies,
+            TaskStatus status,
+            int retryCount,
+            String payload,
+            String compensationPayload,
+            Instant nextRetryAt
+    ) {
         this.taskId = requireNonBlank(taskId, "taskId");
         this.workflowId = requireNonBlank(workflowId, "workflowId");
         this.dependencies = dependencies == null ? List.of() : List.copyOf(dependencies);
@@ -37,6 +52,7 @@ public class Task {
         this.retryCount = Math.max(retryCount, 0);
         this.payload = payload;
         this.compensationPayload = compensationPayload;
+        this.nextRetryAt = nextRetryAt;
     }
 
     public static Task pending(String taskId, String workflowId, List<String> dependencies, String payload) {
@@ -45,7 +61,7 @@ public class Task {
 
     public static Task pending(
             String taskId, String workflowId, List<String> dependencies, String payload, String compensationPayload) {
-        return new Task(taskId, workflowId, dependencies, TaskStatus.PENDING, 0, payload, compensationPayload);
+        return new Task(taskId, workflowId, dependencies, TaskStatus.PENDING, 0, payload, compensationPayload, null);
     }
 
     public List<String> getDependencies() {

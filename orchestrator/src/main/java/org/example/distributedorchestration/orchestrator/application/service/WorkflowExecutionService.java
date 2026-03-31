@@ -64,7 +64,8 @@ public class WorkflowExecutionService {
                 entity.getStatus(),
                 entity.getRetryCount(),
                 entity.getPayload(),
-                entity.getCompensationPayload()
+                entity.getCompensationPayload(),
+                entity.getNextRetryAt()
         );
     }
 }

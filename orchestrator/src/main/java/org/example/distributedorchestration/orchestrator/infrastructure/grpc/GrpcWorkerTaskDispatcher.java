@@ -3,6 +3,7 @@ package org.example.distributedorchestration.orchestrator.infrastructure.grpc;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.grpc.StatusRuntimeException;
 import java.time.Duration;
+import java.time.Instant;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.example.distributedorchestration.common.model.Task;
@@ -15,8 +16,8 @@ import org.example.distributedorchestration.orchestrator.persistence.entity.Task
 import org.springframework.stereotype.Service;
 
 /**
- * Dispatches runnable tasks to workers via gRPC with exponential backoff (Step 9), circuit breaker (Step 12),
- * and metrics (Step 13).
+ * Dispatches runnable tasks to workers via gRPC with exponential backoff (Step 9) persisted as {@code next_retry_at},
+ * circuit breaker (Step 12), and metrics (Step 13).
  */
 @Service
 @RequiredArgsConstructor
@@ -36,62 +37,66 @@ public class GrpcWorkerTaskDispatcher implements WorkerTaskDispatcher {
 
     private void dispatchBody(Task task) {
         TaskEntityId id = new TaskEntityId(task.getTaskId(), task.getWorkflowId());
+        Instant now = Instant.now();
+        if (!persistence.tryBeginDispatch(id, now)) {
+            log.debug(
+                    "Skip dispatch (not claimable) workflowId={} taskId={}",
+                    task.getWorkflowId(),
+                    task.getTaskId());
+            return;
+        }
+
         TaskRequest request = TaskRequest.newBuilder()
                 .setTaskId(task.getTaskId())
                 .setPayload(task.getPayload() == null ? "" : task.getPayload())
                 .build();
 
-        while (true) {
-            long t0 = System.nanoTime();
-            try {
-                var response = resilientWorkerClient.executeTask(request);
-                orchestrationMetrics.recordTaskExecutionTime(
-                        Duration.ofNanos(System.nanoTime() - t0),
-                        response.getSuccess() ? "success" : "worker_failure");
-                if (response.getSuccess()) {
-                    persistence.markSuccess(id);
-                    orchestrationMetrics.recordDispatchSuccess();
-                    log.info("Dispatch success workflowId={} taskId={}", task.getWorkflowId(), task.getTaskId());
-                    return;
-                }
-                log.warn(
-                        "Worker reported failure workflowId={} taskId={} message={}",
-                        task.getWorkflowId(),
-                        task.getTaskId(),
-                        response.getMessage());
-                if (handleFailure(id, task)) {
-                    orchestrationMetrics.recordDispatchTerminalFailure();
-                    return;
-                }
-            } catch (CallNotPermittedException e) {
-                orchestrationMetrics.recordTaskExecutionTime(
-                        Duration.ofNanos(System.nanoTime() - t0), "circuit_open");
-                log.warn(
-                        "Worker circuit breaker open workflowId={} taskId={}",
-                        task.getWorkflowId(),
-                        task.getTaskId());
-                if (handleFailure(id, task)) {
-                    orchestrationMetrics.recordDispatchTerminalFailure();
-                    return;
-                }
-            } catch (StatusRuntimeException e) {
-                orchestrationMetrics.recordTaskExecutionTime(
-                        Duration.ofNanos(System.nanoTime() - t0), "rpc_error");
-                log.error(
-                        "gRPC dispatch failed workflowId={} taskId={}",
-                        task.getWorkflowId(),
-                        task.getTaskId(),
-                        e);
-                if (handleFailure(id, task)) {
-                    orchestrationMetrics.recordDispatchTerminalFailure();
-                    return;
-                }
+        long t0 = System.nanoTime();
+        try {
+            var response = resilientWorkerClient.executeTask(request);
+            orchestrationMetrics.recordTaskExecutionTime(
+                    Duration.ofNanos(System.nanoTime() - t0),
+                    response.getSuccess() ? "success" : "worker_failure");
+            if (response.getSuccess()) {
+                persistence.markSuccess(id);
+                orchestrationMetrics.recordDispatchSuccess();
+                log.info("Dispatch success workflowId={} taskId={}", task.getWorkflowId(), task.getTaskId());
+                return;
+            }
+            log.warn(
+                    "Worker reported failure workflowId={} taskId={} message={}",
+                    task.getWorkflowId(),
+                    task.getTaskId(),
+                    response.getMessage());
+            if (handleFailure(id, task, Instant.now())) {
+                orchestrationMetrics.recordDispatchTerminalFailure();
+            }
+        } catch (CallNotPermittedException e) {
+            orchestrationMetrics.recordTaskExecutionTime(
+                    Duration.ofNanos(System.nanoTime() - t0), "circuit_open");
+            log.warn(
+                    "Worker circuit breaker open workflowId={} taskId={}",
+                    task.getWorkflowId(),
+                    task.getTaskId());
+            if (handleFailure(id, task, Instant.now())) {
+                orchestrationMetrics.recordDispatchTerminalFailure();
+            }
+        } catch (StatusRuntimeException e) {
+            orchestrationMetrics.recordTaskExecutionTime(
+                    Duration.ofNanos(System.nanoTime() - t0), "rpc_error");
+            log.error(
+                    "gRPC dispatch failed workflowId={} taskId={}",
+                    task.getWorkflowId(),
+                    task.getTaskId(),
+                    e);
+            if (handleFailure(id, task, Instant.now())) {
+                orchestrationMetrics.recordDispatchTerminalFailure();
             }
         }
     }
 
-    private boolean handleFailure(TaskEntityId id, Task task) {
-        WorkerDispatchPersistence.BackoffOutcome outcome = persistence.recordFailureAndGetBackoff(id);
+    private boolean handleFailure(TaskEntityId id, Task task, Instant now) {
+        WorkerDispatchPersistence.BackoffOutcome outcome = persistence.recordFailureAndScheduleRetry(id, now);
         if (outcome.exhausted()) {
             log.warn(
                     "Retries exhausted for workflowId={} taskId={}",
@@ -102,21 +107,10 @@ public class GrpcWorkerTaskDispatcher implements WorkerTaskDispatcher {
         }
         orchestrationMetrics.recordDispatchRetryAttempt();
         log.debug(
-                "Dispatch retry scheduled workflowId={} taskId={} delaySeconds={}",
+                "Dispatch retry deferred workflowId={} taskId={} delaySeconds={}",
                 task.getWorkflowId(),
                 task.getTaskId(),
                 outcome.delaySeconds());
-        sleepBackoffSeconds(outcome.delaySeconds());
         return false;
-    }
-
-    /** Spec Step 9: {@code Thread.sleep(delay * 1000)}. */
-    private static void sleepBackoffSeconds(int delaySeconds) {
-        try {
-            Thread.sleep(delaySeconds * 1000L);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException("dispatch interrupted during backoff", e);
-        }
     }
 }
