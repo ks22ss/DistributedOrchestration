@@ -2,6 +2,8 @@
 
 Sample **distributed DAG workflow orchestrator** in Java: a Spring Boot **orchestrator** (REST + PostgreSQL + gRPC client) dispatches tasks to a Spring Boot **worker** (gRPC server).
 
+For **scope, non-goals, and design notes** (first-person), see **[FINAL_THOUGHTS.md](FINAL_THOUGHTS.md)**.
+
 ## Prerequisites
 
 - **JDK 21** (Gradle uses the toolchain resolver; `./gradlew` will suggest downloads if needed)
