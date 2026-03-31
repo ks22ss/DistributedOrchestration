@@ -16,6 +16,8 @@ orchestration:
   worker:
     host: localhost
     grpc-port: 9090
+    # Optional comma-separated host:port list (round-robin). When set, each entry gets its own channel.
+    endpoints: "localhost:9090,localhost:9091"
   dispatch:
     max-retries: 5
     retry-scan-interval-ms: 1000

@@ -43,7 +43,7 @@ Use **two terminals**. Start infrastructure first if you rely on Docker for Post
    ./gradlew :worker:bootRun
    ```
 
-2. **Orchestrator** (REST and Actuator on **8080**; connects to worker at `localhost:9090` per `orchestrator/src/main/resources/application.yml`):
+2. **Orchestrator** (REST and Actuator on **8080**; targets workers via `orchestration.worker.host` / `grpc-port`, or comma-separated `orchestration.worker.endpoints` for round-robin across multiple workers — see `orchestrator/src/main/resources/application.yml`):
 
    ```bash
    ./gradlew :orchestrator:bootRun
