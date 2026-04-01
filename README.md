@@ -69,7 +69,22 @@ This project is a sample distributed DAG workflow orchestrator in Java. It is a 
 
 ## Hypothesis and Thoughts come up:
 
-### 1. Spring Boot Transaction
+
+### 1. Entity Design
+
+**Why `TaskEntity` uses `@EmbeddedId` (`TaskEntityId`: `task_id` + `workflow_id` as strings) instead of `@MapsId` on a `@ManyToOne` to `WorkflowEntity`**
+
+JPA often shows a pattern like: task has a `@ManyToOne` workflow, and the embeddable id’s `workflowId` is **`@MapsId`** so the primary key’s foreign-key column is **shared** with the association—one conceptual “source” for `workflow_id` on the row.
+
+I did **not** take that route here, on purpose:
+
+- **Simpler entity lifecycle** — With `@MapsId`, creating a `TaskEntity` usually means wiring a **managed** `WorkflowEntity` (or carefully setting both the relation and the id fields so they stay consistent). For bulk insert of tasks right after `WorkflowEntity` is saved, an **`EmbeddedId` with two strings** is just: `new TaskEntityId(taskId, workflowId)` — no requirement to navigate the object graph for the PK to be correct.
+
+- **Clear separation of concerns** — `TaskEntity` stays a flat row mapping: id embeddable + columns. A `@ManyToOne` would pull **navigation and fetch semantics** (lazy vs eager, N+1 questions) into an entity that I mostly treat as **state + columns** behind repositories. I can still enforce **`workflow_id` → `workflows.workflow_id`** with a **database foreign key** in migrations without teaching Hibernate that the PK is “derived from” the parent entity.
+
+I do **not** get JPA-managed “FK and PK share one field” for free; I must keep `workflow_id` in `TaskEntityId` **in sync** with business rules myself (the code always constructs the id from the same `workflowId` when saving tasks). For this sample, that is a small, explicit cost. `@EmbeddedId` with string-only components is a deliberate choice for **readability and straightforward persistence** of composite natural keys. **`@MapsId`** would be a good fit if I wanted the task’s PK to be **formally tied** to a `WorkflowEntity` association in the ORM layer; I preferred a **minimal** mapping and rely on the schema + application code for consistency.
+
+### 2. Spring Boot Transaction
 
 In the path of workflow submission, 
 1. the workflow is saved to the database
