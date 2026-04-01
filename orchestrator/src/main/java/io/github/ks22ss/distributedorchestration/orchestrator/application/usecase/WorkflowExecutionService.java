@@ -6,6 +6,7 @@ import io.github.ks22ss.distributedorchestration.orchestrator.adapters.data_acce
 import io.github.ks22ss.distributedorchestration.orchestrator.adapters.data_access.sql.repository.WorkflowJpaRepository;
 import io.github.ks22ss.distributedorchestration.orchestrator.application.port.out.WorkerTaskDispatcher;
 import io.github.ks22ss.distributedorchestration.orchestrator.domain.policy.RunnableTaskSelector;
+import io.github.ks22ss.distributedorchestration.orchestrator.application.port.in.WorkflowExecutionUseCase;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -20,7 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 /** Loads persisted state and dispatches runnable tasks to workers over gRPC. */
 @Service
 @Slf4j
-public class WorkflowExecutionService implements io.github.ks22ss.distributedorchestration.orchestrator.application.port.in.WorkflowExecutionUseCase {
+public class WorkflowExecutionService implements WorkflowExecutionUseCase {
 
     private final WorkflowJpaRepository workflowRepository;
     private final TaskJpaRepository taskRepository;

@@ -12,6 +12,7 @@ import io.github.ks22ss.distributedorchestration.orchestrator.adapters.data_acce
 import io.github.ks22ss.distributedorchestration.orchestrator.adapters.data_access.sql.repository.TaskJpaRepository;
 import io.github.ks22ss.distributedorchestration.orchestrator.adapters.data_access.sql.repository.WorkflowJpaRepository;
 import io.github.ks22ss.distributedorchestration.orchestrator.domain.policy.WorkflowDagValidator;
+import io.github.ks22ss.distributedorchestration.orchestrator.application.port.in.SubmitWorkflowUseCase;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -31,7 +32,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 @Slf4j
-public class WorkflowSubmissionService implements io.github.ks22ss.distributedorchestration.orchestrator.application.port.in.SubmitWorkflowUseCase {
+public class WorkflowSubmissionService implements SubmitWorkflowUseCase {
 
     private final WorkflowDagValidator dagValidator;
     private final WorkflowJpaRepository workflowRepository;

@@ -19,7 +19,7 @@ docker compose up -d
 
 This starts:
 
-| Service    | Purpose | On your machine |
+| Service    | Purpose | On my machine |
 |------------|---------|-----------------|
 | PostgreSQL | Orchestrator database | `localhost:5432` — DB `orchestration`, user/password `orchestrator` |
 | Prometheus | Scrapes orchestrator metrics | UI: `http://localhost:9099` (container `9090` mapped to host `9099`) |
@@ -53,73 +53,228 @@ Submit workflows with `POST http://localhost:8080/workflows` (JSON body per `Wor
 
 Task dispatch retries use **`next_retry_at`** in the database and a periodic retry scan (`orchestration.dispatch.retry-scan-interval-ms` in `application.yml`), not `Thread.sleep` on the HTTP thread. An in-flight **lease** (`in-flight-lease-seconds`) prevents duplicate dispatch until a call completes, backoff elapses, or the lease expires after a crash. Independent runnable tasks in the same wave run on a bounded **dispatch pool** (`parallelism`, `parallel-queue-capacity`).
 
-## Final thoughts
-
-I set out to build something **small enough to read in an afternoon** but **honest enough** to touch real distributed concerns: DAG validation, cross-service calls, retries, saga-style compensation, and basic ops hooks (metrics, optional traces).
-
-### Central orchestration and Postgres as source of truth
-
-I wanted one obvious place to answer “what runs next?” without pulling in a message bus or a full workflow engine on day one. The database holds workflow and task state; the orchestrator loads it, computes runnable tasks, dispatches over gRPC, and writes outcomes back. That keeps the control flow traceable even when workers and networks misbehave.
-
-### Submission, completion, and Spring events
-
-The orchestrator needs to wake up in two situations:
-
-| When | What should happen |
-|------|-------------------|
-| Someone **submitted** a workflow | Start any tasks that can run right away (no dependencies yet). |
-| A task **finished successfully** | Save that in the DB, then look again for newly runnable tasks (e.g. task **b** after **a** succeeds). |
-
-Both use “events,” but **the second one is easier to get wrong**, so it is worth spelling out.
-
-**Why wait until after commit on submit?**  
-If the orchestrator started work in the **same** database transaction as `save`, a rollback could cancel the insert while workers were already running. So I fire `WorkflowSubmittedEvent` and listen with **`@TransactionalEventListener(AFTER_COMMIT)`** — meaning “only run this **after** Postgres has really stored the workflow and tasks.”
-
-**Common bugs with “task b never ran”**  
-Task **b** waits until **a** is **SUCCESS** in the database. The worker can finish **a** fine; the bug is on the orchestrator side: something must **re-run scheduling** after `a` is committed.
-
-I first published **`TaskCompletedEvent`** from **`GrpcWorkerTaskDispatcher`** right after **`WorkerDispatchPersistence.markSuccess`**, with **`@TransactionalEventListener(AFTER_COMMIT)`** like submit. That fails for two common reasons:
-
-1. **Dispatch runs on a pool thread** (`dispatchExecutor` in **`WorkflowExecutionService`**). That thread usually has **no** Spring transaction when it calls `publishEvent`. For **`AFTER_COMMIT`**, Spring then has **nothing to commit to** and **skips** the listener unless `fallbackExecution = true`.
-2. Even on a thread that still has an **outer** read-only transaction, the listener is tied to **that** transaction’s commit, not to the **`REQUIRES_NEW`** transaction that actually wrote `SUCCESS` — easy to get **surprising timing** or **missed** notifications.
-
-**Symptom:** worker log shows **a** succeeded; task **b** stays **PENDING** forever.
-
-**What the code does now**  
-1. **`markSuccess`** (`REQUIRES_NEW`) saves `SUCCESS`, then registers **`TransactionSynchronization.afterCommit`** so **`TaskCompletedEvent`** is published **only after** that inner transaction **commits**.  
-2. **`WorkflowExecutionListener.onTaskCompleted`** is a plain **`@EventListener`**, so it always runs when the event is published — no dependency on “which outer transaction is open.”  
-3. **`onWorkflowSubmitted`** stays **`@TransactionalEventListener(AFTER_COMMIT)`** because **`WorkflowSubmissionService`** publishes **`WorkflowSubmittedEvent`** **inside** the submit transaction.
-
-**Hypothetical run**  
-Workflow **demo** with tasks **`a`** (no deps) then **`b`** (depends on **`a`**):
-
-1. **POST /workflows** → **`WorkflowSubmissionService`** persists rows in **transaction T_submit**, then `publishEvent(new WorkflowSubmittedEvent("demo"))`.  
-2. After **T_submit** commits, **`WorkflowExecutionListener.onWorkflowSubmitted`** runs and calls **`WorkflowExecutionService.triggerExecution("demo")`**.  
-3. **`triggerExecution`** opens a **read-only transaction T_read**, loads tasks, sees only **`a`** runnable, and submits **`GrpcWorkerTaskDispatcher.dispatch(a)`** to **`dispatchExecutor`** (another thread). **`triggerExecution`** returns and **T_read** ends.  
-4. On the **pool thread**, dispatch talks to the worker; on success it calls **`WorkerDispatchPersistence.markSuccess(idForA)`**.  
-5. **`markSuccess`** runs in **T_success** (`REQUIRES_NEW`), writes **`a = SUCCESS`**, commits **T_success**, then the registered **`afterCommit`** runs and **`publishEvent(new TaskCompletedEvent("demo", "a"))`**.  
-6. **`WorkflowExecutionListener.onTaskCompleted`** runs and calls **`triggerExecution("demo")`** again. This time the DB shows **`a`** as **SUCCESS**, so **`b`** is runnable and gets dispatched the same way.
-
-Step 5 is the fix: the completion signal is **pinned to the commit of the transaction that actually wrote `SUCCESS`**, and the listener does **not** rely on **`TransactionalEventListener`**.
-
-**Takeaway**  
-Same word “event,” two shapes: submit uses **“after my DB transaction commits”**; task completion uses **“after the success-write transaction commits”** plus a **non-transactional** listener so pool threads and `REQUIRES_NEW` do not silently drop the notification.
-
-### Retries, leases, and not blocking threads
-
-I did not want long **`Thread.sleep`** loops holding HTTP or arbitrary threads open. Failures schedule **`next_retry_at`**; a scheduler reapplies work; a **time-based lease** reduces duplicate dispatch while a call is in flight and eventually recovers if a JVM dies mid-flight. The model is **at-least-once**; a real deployment would push **idempotent** task handlers—I kept the sample worker stubby on purpose.
-
-### Workers, gRPC, and “just enough” scale
-
-Workers stay **thin**: accept RPC, run the hook, return success or failure. The orchestrator can target **multiple worker endpoints** with a simple **round-robin** client—enough to show horizontal scale without inventing discovery, sticky routing, or per-backend circuit breakers. Resilience4j still protects the client path, but I treat that as a demo-grade compromise.
-
-### What I deliberately left out
-
-No outbox/inbox hardening, no Temporal/Camunda/Step Functions, no exactly-once story, no production-grade multi-tenant ops. Drawing that line keeps the repo useful as a **map of the territory** before you invest in platform-sized tooling.
-
 ## Other commands
 
 ```bash
 ./gradlew test          # run tests
 ./gradlew build         # compile and test
+```
+
+## Thoughts on the project 
+
+This project is a sample distributed DAG workflow orchestrator in Java. It is a Spring Boot application that uses a PostgreSQL database to store workflow and task data. It also uses a gRPC client to dispatch tasks to a worker. The orchestrator is responsible for validating the workflow DAG and dispatching tasks to the worker. The worker is responsible for executing the tasks and updating the workflow and task data in the database.
+
+**Here are some of my thoughts and observations during development process**
+
+
+## Hypothesis and Thoughts come up:
+
+### 1. Spring Boot Transaction
+
+In the path of workflow submission, 
+1. the workflow is saved to the database
+2. the tasks are saved to the database
+3. then a WorkflowSubmittedEvent is published
+
+```java
+
+   // In the WorkflowSubmissionService class
+    @Transactional
+    @Override
+    public SubmitWorkflowResult submit(SubmitWorkflowCommand command) {
+        //...
+        workflowRepository.save(new WorkflowEntity(workflowId, WorkflowStatus.RUNNING, createdAt));
+
+        for (SubmitWorkflowTaskCommand taskCmd : command.tasks()) {
+            //...
+            taskRepository.save(entity);
+        }
+        //...
+
+        eventPublisher.publishEvent(new WorkflowSubmittedEvent(workflowId));
+        //...
+        return new SubmitWorkflowResult(workflowId, WorkflowStatus.RUNNING.name());
+    }
+
+
+    //...
+   @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+   public void onWorkflowSubmitted(WorkflowSubmittedEvent event) {
+      log.info("Workflow submitted event received workflowId={}", event.workflowId());
+      workflowExecutionService.triggerExecution(event.workflowId());
+   }
+
+   //
+    @Transactional(readOnly = true)
+    @Override
+    public void triggerExecution(String workflowId) {
+        log.info("Trigger execution start workflowId={}", workflowId);
+        //...
+    }
+```
+
+1) What if triggerExecution is a long process, no distributed workers are involved?
+
+The flow of the workflow submission is: 
+-> workflow submission 
+-> save workflow and tasks 
+-> publish WorkflowSubmittedEvent 
+-> triggerExecution (long process)
+
+User will got delay response while waiting for the execution to finish trigger.
+Because in my case tiggerExecution is a fast dispatch process, it will not block the HTTP thread that long. So it is fine leave it sequential.
+But if it is a long process, it will block the HTTP thread and held user's thread blocked. User preceive higher latency.
+
+To solve this, use `@Async` annotation.
+
+Enable async processing (`@EnableAsync` on a configuration class) and provide a `TaskExecutor` (or rely on Spring’s default). Then mark `@Async` to either the execution entry point or the listener so the heavy work runs on a worker thread instead of the HTTP thread.
+
+```java
+@Async
+@Transactional(readOnly = true)
+@Override
+public void triggerExecution(String workflowId) {
+   log.info("Trigger execution start workflowId={}", workflowId);
+   // ...
+}
+```
+
+But we may still hit resources limit if the demand exceed thread pool capacity, doesn't matter if using the default pool or you create custom-tuned pool. That's why distributed workers are needed in case. Spring runs tasks on a 
+
+
+2) Read-Write Split database
+
+I was wonder what if I am not using a single Database, but a Read Write Master Slaves style Database Cluster. 
+The `AFTER_COMMIT` fires the moment the Master Wrtie DB says "OK." If the Slave DB hasn't replicated that new Workflow yet, and the execution service tries to read the workflow from the Slave, may throw an `EntityNotFoundException`.
+A tiny delay / retry can solve this.
+
+3) "Ghost" Event
+
+Let's say the Transaction commits successfully in the Database.
+But the Server immediately crashes before it can execute the `AFTER_COMMIT` logic.
+Now `triggerExecution()` was never called.
+Workflow will forever stuck running.
+
+Same thing if anything goes wrong with the `triggerExecution()` call. workers never hear about the dispatched workflow.
+
+**OutBox Pattern** can solve this. Instead of publishing a volatile event, save a WorkflowJob entity in the same transaction. A background worker reads the outbox table then picks up any `Pending` jobs that haven't started. This is up to the requirement, is this task or workflow really a mission critical event?
+
+
+
+4) Over Catching Exceptions
+
+I was imagining the controller is like this:
+```java
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    public SubmitWorkflowResult submit(@Valid @RequestBody SubmitWorkflowRequest request) {
+
+         try {
+            SubmitWorkflowResult result = workflowSubmissionService.submit(toCommand(request));
+         } catch (Exception e) {
+             // Swallowing the exception
+             // The user/caller gets no indication that the DB actually rolled back.
+         }
+
+         // return to user with 200
+```
+
+That's why using have `Global Exception Handler` allow the Spring Transaction Proxy to see the error, perform a full rollback, and ensure my AFTER_COMMIT listener never fires.
+
+Using the global adviser pattern, we can catch all exceptions and perform a full rollback + custom user friendly response.
+
+```java
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+
+    @ExceptionHandler(DuplicateWorkflowException.class)
+    public ResponseEntity<ErrorResponse> handleDuplicate(DuplicateWorkflowException ex) {
+        // Return 409 Conflict, Client Knows what went wrong
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                             .body(new ErrorResponse("ALREADY_EXISTS", ex.getMessage()));
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ErrorResponse> handleDbError(DataIntegrityViolationException ex) {
+        // Return 400 Bad Request for constraint violations, Client Knows what went wrong
+        return ResponseEntity.badRequest()
+                             .body(new ErrorResponse("DATABASE_ERROR", "Invalid data provided"));
+    }
+}
+```
+
+The only tradeoff is we need to know and map the exceptions ahead of time or use a Safty Net Pattern fallback to 500.
+
+
+5) Network calls, gRPC clients fail
+
+Another ghost event scenario gRPC worker starts slowing down (Partial Failure). If no Circuit Breaker,  submit thread at the AFTER_COMMIT listener will hang. stuck waiting for gRPC timeouts, and entire application will stop responding. Database says the workflow is `RUNNING` but no task was actually dispatched.
+
+A `Circuit Breaker` comes into play here. Instead of hanging, circult breaker make it fail fast. The listener after circult breaks throws a `CallNotPermittedException` **immediately without even trying the network until the open wait time elapses**. But still we need to handle the failure and update the Workflow status in the DB to FAILED_TO_START or QUEUED_FOR_RETRY. And handle that later like, retry + apply compensation SAGA pattern.
+
+In this project, we use `Resilience4j` to implement the Circuit Breaker.
+
+The `AFTER_COMMIT` listener does not do the gRPC call.
+It calls `triggerExecution()`, which only selects runnable tasks and submits dispatch jobs to `dispatchExecutor` that are running on a thread pool. The gRPC call happens later on those executor threads, not on the original HTTP thread. When the circuit is OPEN, dispatch fails fast and is persisted as “retry later.
+
+```java
+// GrpcWorkerTaskDispatcher
+    private boolean handleFailure(TaskEntityId id, Task task, Instant now) {
+        WorkerDispatchPersistence.BackoffOutcome outcome = persistence.recordFailureAndScheduleRetry(id, now);
+        if (outcome.exhausted()) {
+            log.warn(
+                    "Retries exhausted for workflowId={} taskId={}",
+                    task.getWorkflowId(),
+                    task.getTaskId());
+            workflowCompensationAsyncRunner.triggerCompensation(task.getWorkflowId());
+            return true;
+        }
+```
+
+```java
+// WorkerDispatchPersistence.java
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public BackoffOutcome recordFailureAndScheduleRetry(TaskEntityId id, Instant now) {
+        TaskEntity entity = taskRepository.findById(id).orElseThrow();
+        int delaySeconds = (int) Math.pow(2, entity.getRetryCount());
+        entity.setRetryCount(entity.getRetryCount() + 1);
+        if (entity.getRetryCount() > maxRetries) {
+            entity.setStatus(TaskStatus.FAILED);
+            entity.setNextRetryAt(null);
+            taskRepository.save(entity);
+            return new BackoffOutcome(0, true);
+        }
+        entity.setStatus(TaskStatus.PENDING);
+        entity.setNextRetryAt(now.plusSeconds(delaySeconds));
+        taskRepository.save(entity);
+        return new BackoffOutcome(delaySeconds, false);
+    }
+```
+
+
+By labeling the status as `PENDING`, the retry scanner will pick it up and try again.
+
+```java
+@Component
+@RequiredArgsConstructor
+@Slf4j
+public class DispatchRetryScheduler {
+
+    private final TaskJpaRepository taskRepository;
+    private final WorkflowExecutionUseCase workflowExecutionService;
+
+    @Scheduled(fixedDelayString = "${orchestration.dispatch.retry-scan-interval-ms:1000}")
+    public void dispatchDueRetries() {
+        Instant now = Instant.now();
+        for (String workflowId :
+                taskRepository.findDistinctWorkflowIdsWithRetriesDue(TaskStatus.PENDING, now)) {
+            log.debug("Retry scan: triggering execution workflowId={}", workflowId);
+            try {
+                workflowExecutionService.triggerExecution(workflowId);
+            } catch (RuntimeException e) {
+                log.warn("Retry scan failed workflowId={}", workflowId, e);
+            }
+        }
+    }
+}
 ```
